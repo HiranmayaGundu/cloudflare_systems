@@ -1,39 +1,34 @@
-use std::fs;
-use std::path::PathBuf;
+#[macro_use]
+extern crate lazy_static;
 
-use actix_files::NamedFile;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use std::sync::Mutex;
 
-#[get("/")]
-async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
-}
+use actix_web::{web, App, HttpServer};
 
-#[post("/echo")]
-async fn echo(req_body: String) -> impl Responder {
-    HttpResponse::Ok().body(req_body)
-}
+use crate::{
+    app_state::AppStateWithCounter,
+    handlers::{auth_provider, serve_readme, stats, verify},
+};
 
-#[get("/auth/{username}")]
-async fn auth_provider(web::Path((username)): web::Path<String>) -> actix_web::Result<NamedFile> {
-    let path: PathBuf = PathBuf::from("./public.pem");
-    Ok(NamedFile::open(path)?)
-}
-
-#[get("/README.txt")]
-async fn serve_readme() -> actix_web::Result<NamedFile> {
-    let path: PathBuf = PathBuf::from("./README.txt");
-    Ok(NamedFile::open(path)?)
-}
+mod app_state;
+mod handlers;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
+    let counter = web::Data::new(AppStateWithCounter {
+        auth_counter: Mutex::new(0),
+        verify_counter: Mutex::new(0),
+        auth_time: Mutex::new(0),
+        verify_time: Mutex::new(0),
+    });
+
+    HttpServer::new(move || {
         App::new()
-            .service(hello)
-            .service(echo)
+            .app_data(counter.clone())
             .service(auth_provider)
             .service(serve_readme)
+            .service(verify)
+            .service(stats)
     })
     .bind("127.0.0.1:8080")?
     .run()
